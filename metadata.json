@@ -1,0 +1,8 @@
+{
+  "name": "SuperApp Kisi Soal 2026",
+  "description": "A web application to generate exam questions and grids based on curriculum standards for MIN 1 Banyuwangi, including validation and export features to Excel and Word.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
