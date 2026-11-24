@@ -57,7 +57,7 @@ const Step1InputForm: React.FC<Props> = ({ setAppState, handleNext }) => {
   };
 
   const totalSoal = formData.jumlahPG + formData.jumlahPGKompleks + formData.jumlahIsian + formData.jumlahUraian;
-  const isFormInvalid = totalSoal === 0 || !formData.materi || !formData.cp || !formData.tp;
+  const isFormInvalid = totalSoal === 0 || !formData.materi?.trim() || !formData.cp?.trim() || !formData.tp?.trim();
   
   const inputBaseClasses = "mt-1 block w-full rounded-md bg-white shadow-sm sm:text-sm p-2.5 focus:outline-none";
   const inputBorderClasses = {
@@ -71,11 +71,33 @@ const Step1InputForm: React.FC<Props> = ({ setAppState, handleNext }) => {
         <h2 className="text-3xl font-bold text-center text-green-800 mb-8">Input Data Pembuatan Soal</h2>
         <form onSubmit={handleSubmit} className="space-y-8">
             {error && (
-                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md flex items-start gap-3 shadow-md">
-                    <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0"/>
+                <div className="bg-red-50 border-2 border-red-400 text-red-800 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5"/>
+                        <div>
+                            <p className="font-bold text-red-900">Gagal Membuat Kisi-kisi</p>
+                            <p className="text-sm mt-1">{error}</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); handleSubmit(e); }}
+                        disabled={isLoading}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg shadow transition duration-150 flex-shrink-0 self-end sm:self-center"
+                    >
+                        Coba Lagi
+                    </button>
+                </div>
+            )}
+
+            {isLoading && (
+                <div className="bg-emerald-50 border-2 border-emerald-400 text-emerald-900 p-4 rounded-xl flex items-center gap-4 shadow-md animate-pulse">
+                    <div className="w-6 h-6 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
                     <div>
-                        <p className="font-bold">Gagal Membuat Kisi-kisi</p>
-                        <p>{error}</p>
+                        <p className="font-bold text-emerald-950">AI sedang menyusun kisi-kisi soal berstandar ABCD...</p>
+                        <p className="text-xs text-emerald-800 mt-0.5">
+                            Menyelaraskan Capaian Pembelajaran, materi, level Bloom, dan kaidah ketat ABCD (Audience, Behavior, Condition, Degree). Mohon tunggu 5–20 detik.
+                        </p>
                     </div>
                 </div>
             )}
@@ -165,15 +187,19 @@ const Step1InputForm: React.FC<Props> = ({ setAppState, handleNext }) => {
                 </div>
             </div>
             
-            <div className="flex justify-end pt-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
+                <div className="text-xs text-gray-500 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                    <span>Setiap butir indikator dijamin memuat struktur lengkap <strong>Audience, Behavior, Condition, Degree (ABCD)</strong>.</span>
+                </div>
                 <Button 
                     type="submit" 
                     isLoading={isLoading} 
                     disabled={isFormInvalid}
-                    className="text-white font-bold text-lg py-3 px-8 bg-gradient-to-r from-sky-500 via-violet-500 to-amber-500 hover:from-sky-600 hover:via-violet-600 hover:to-amber-600 shadow-xl transform hover:scale-105 focus:ring-violet-400"
+                    className="w-full sm:w-auto text-white font-bold text-lg py-3 px-8 bg-gradient-to-r from-sky-500 via-violet-500 to-amber-500 hover:from-sky-600 hover:via-violet-600 hover:to-amber-600 shadow-xl transform hover:scale-105 focus:ring-violet-400"
                     variant="primary" // base variant
                 >
-                    Buat Kisi-Kisi
+                    {isLoading ? 'Sedang Menyusun...' : 'Buat Kisi-Kisi'}
                 </Button>
             </div>
         </form>

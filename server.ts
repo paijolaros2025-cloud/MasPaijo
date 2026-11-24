@@ -23,6 +23,29 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
 
+  function formatErrorMessage(error: any): string {
+    if (!error) return 'Terjadi kesalahan pada server AI.';
+    let msg = error.message || String(error);
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed?.error?.message) {
+        msg = parsed.error.message;
+      }
+    } catch {
+      // not JSON string
+    }
+    if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || msg.includes('overloaded')) {
+      return 'Layanan AI sedang mengalami lonjakan beban (503). Silakan klik coba lagi dalam beberapa detik.';
+    }
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+      return 'Batas kuota AI sementara tercapai. Mohon tunggu 1-2 menit lalu coba lagi.';
+    }
+    if (msg.includes('API key') || msg.includes('API_KEY')) {
+      return 'Kunci API Gemini tidak valid atau belum diatur di Settings > Secrets.';
+    }
+    return msg;
+  }
+
   // API Routes
   app.post('/api/gemini/generate-kisi-kisi', async (req: Request, res: Response) => {
     try {
@@ -30,7 +53,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/generate-kisi-kisi:', error);
-      res.status(500).json({ error: error.message || 'Gagal membuat kisi-kisi' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -41,7 +64,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/validate-indicators:', error);
-      res.status(500).json({ error: error.message || 'Gagal memvalidasi indikator' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -52,7 +75,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/fix-indicators:', error);
-      res.status(500).json({ error: error.message || 'Gagal memperbaiki indikator' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -63,7 +86,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/generate-single-soal:', error);
-      res.status(500).json({ error: error.message || 'Gagal membuat satu soal' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -74,7 +97,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/generate-soal:', error);
-      res.status(500).json({ error: error.message || 'Gagal membuat kumpulan soal' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -85,7 +108,7 @@ async function startServer() {
       res.json(result);
     } catch (error: any) {
       console.error('Error in /api/gemini/analyze-soal:', error);
-      res.status(500).json({ error: error.message || 'Gagal menganalisis soal' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
 
@@ -95,9 +118,10 @@ async function startServer() {
       res.json({ imageUrl });
     } catch (error: any) {
       console.error('Error in /api/gemini/generate-image:', error);
-      res.status(500).json({ error: error.message || 'Gagal membuat gambar' });
+      res.status(500).json({ error: formatErrorMessage(error) });
     }
   });
+
 
   // Health check endpoint
   app.get('/api/health', (_req: Request, res: Response) => {

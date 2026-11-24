@@ -107,6 +107,8 @@ interface Props {
   handleBack: () => void;
 }
 
+import { analyzeABCDIndicator } from '../../services/questionUtils';
+
 const Step3Validation: React.FC<Props> = ({ appState, setAppState, handleNext, handleBack }) => {
   const { kisiKisi, validationResults, isLoading, error } = appState;
   const [isValidating, setIsValidating] = useState(false);
@@ -116,18 +118,54 @@ const Step3Validation: React.FC<Props> = ({ appState, setAppState, handleNext, h
   const isJavanese = appState.userInput?.bahasa === Bahasa.JawaHanacaraka;
 
   const augmentedValidationResults = validationResults.map((result, index) => {
-    if (!isArabic || !result) return result;
+    if (!result) return result;
     
     const indicatorText = kisiKisi[index]?.indikator || '';
-    const harakatCheck = validateArabicHarakat(indicatorText);
-    
-    if (!harakatCheck.isValid) {
-      return {
-        isValid: false,
-        reasons: [...(result.reasons || []), harakatCheck.message!]
-      };
+    const abcdCheck = analyzeABCDIndicator(indicatorText);
+
+    // Merge server ABCD evaluation with local pattern heuristics
+    const audienceValid = result.abcd ? result.abcd.audience : abcdCheck.hasAudience;
+    const behaviorValid = result.abcd ? result.abcd.behavior : abcdCheck.hasBehavior;
+    const conditionValid = result.abcd ? result.abcd.condition : abcdCheck.hasCondition;
+    const degreeValid = result.abcd ? result.abcd.degree : abcdCheck.hasDegree;
+
+    const isAbcdComplete = audienceValid && behaviorValid && conditionValid && degreeValid;
+
+    const reasons = [...(result.reasons || [])];
+
+    // If ABCD is not strictly complete, ensure specific reasons are listed
+    if (!conditionValid && !reasons.some(r => r.toLowerCase().includes('condition') || r.toLowerCase().includes('stimulus'))) {
+      reasons.push('Unsur Condition (C) belum terpenuhi: Indikator wajib diawali kondisi/stimulus pengantar (misal: "Disajikan teks...", "Diberikan tabel data...").');
     }
-    return result;
+    if (!audienceValid && !reasons.some(r => r.toLowerCase().includes('audience') || r.toLowerCase().includes('peserta didik'))) {
+      reasons.push('Unsur Audience (A) belum terpenuhi: Subjek "peserta didik" wajib disebutkan secara eksplisit.');
+    }
+    if (!behaviorValid && !reasons.some(r => r.toLowerCase().includes('behavior') || r.toLowerCase().includes('kko'))) {
+      reasons.push('Unsur Behavior (B) belum terpenuhi: Wajib menggunakan Kata Kerja Operasional (KKO) Bloom yang terukur beserta materi spesifik.');
+    }
+    if (!degreeValid && !reasons.some(r => r.toLowerCase().includes('degree') || r.toLowerCase().includes('tingkat ketepatan'))) {
+      reasons.push('Unsur Degree (D) belum terpenuhi: Wajib memuat kriteria tingkat ketepatan atau standar keberhasilan (misal: "dengan tepat", "dengan benar").');
+    }
+
+    if (isArabic) {
+      const harakatCheck = validateArabicHarakat(indicatorText);
+      if (!harakatCheck.isValid) {
+        reasons.push(harakatCheck.message!);
+      }
+    }
+
+    const strictlyValid = result.isValid && isAbcdComplete && (!isArabic || validateArabicHarakat(indicatorText).isValid);
+
+    return {
+      isValid: strictlyValid,
+      reasons,
+      abcd: {
+        audience: audienceValid,
+        behavior: behaviorValid,
+        condition: conditionValid,
+        degree: degreeValid,
+      }
+    };
   });
 
   const runValidation = useCallback(async () => {
@@ -175,7 +213,11 @@ const Step3Validation: React.FC<Props> = ({ appState, setAppState, handleNext, h
             const indexToUpdate = newKisiKisi.findIndex(k => k.noSoal === fixedItem.noSoal);
             if (indexToUpdate !== -1) {
                 newKisiKisi[indexToUpdate] = fixedItem;
-                newValidationResults[indexToUpdate] = { isValid: true, reasons: [] }; // Assume fixed is valid
+                newValidationResults[indexToUpdate] = {
+                  isValid: true,
+                  reasons: [],
+                  abcd: { audience: true, behavior: true, condition: true, degree: true }
+                };
             }
         });
         
@@ -205,12 +247,32 @@ const Step3Validation: React.FC<Props> = ({ appState, setAppState, handleNext, h
   else langClass = 'text-base';
 
   if (isValidating || (isLoading && !isFixing)) {
-    return <Spinner message="Memvalidasi indikator..." />;
+    return <Spinner message="Sedang mengaudit kelengkapan kaidah ABCD indikator soal..." />;
   }
 
   return (
     <Card>
-      <h2 className="text-2xl font-bold text-center text-green-800 mb-6">Validasi Indikator Soal</h2>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-green-800">Validasi Indikator Soal (Standar ABCD)</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Audit ketat kepatuhan 4 pilar mutlak: <strong>Condition (C)</strong>, <strong>Audience (A)</strong>, <strong>Behavior (B)</strong>, dan <strong>Degree (D)</strong>.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {allValid ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+              <CheckCircle className="w-3.5 h-3.5" />
+              Semua Indikator Lolos ABCD
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+              Perlu Penyesuaian ABCD
+            </span>
+          )}
+        </div>
+      </div>
       
       {error && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md mb-6 flex items-start gap-3">
@@ -220,36 +282,129 @@ const Step3Validation: React.FC<Props> = ({ appState, setAppState, handleNext, h
       )}
 
       <div className="space-y-6">
-        {kisiKisi.map((item, index) => (
-          <div key={index} className="border border-gray-200 rounded-lg p-4">
-            <p className="font-semibold text-gray-800">
-              <span className="text-green-600">Indikator #{item.noSoal}:</span> 
-              <span className={`block mt-2 font-normal ${langClass} ${textDirClass}`} dir={isArabic ? 'rtl' : 'ltr'}>{item.indikator}</span>
-            </p>
-            {augmentedValidationResults[index] && (
-              <div className="mt-3">
-                {augmentedValidationResults[index].isValid ? (
-                  <div className="flex items-center gap-2 text-green-600">
-                    <CheckCircle className="w-5 h-5" />
-                    <span className="font-semibold">Valid</span>
-                  </div>
+        {kisiKisi.map((item, index) => {
+          const res = augmentedValidationResults[index];
+          const abcd = res?.abcd || { audience: false, behavior: false, condition: false, degree: false };
+          const isValid = res?.isValid ?? false;
+
+          return (
+            <div
+              key={index}
+              className={`border rounded-xl p-5 transition-all ${
+                isValid
+                  ? 'border-green-200 bg-white hover:border-green-300 shadow-xs'
+                  : 'border-red-300 bg-red-50/30 ring-1 ring-red-200 shadow-xs'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-mono">
+                    Soal #{item.noSoal}
+                  </span>
+                  <span className="text-xs font-medium text-gray-500">
+                    Bentuk: <strong className="text-gray-700">{item.bentukSoal}</strong>
+                  </span>
+                  <span className="text-xs font-medium text-gray-500">·</span>
+                  <span className="text-xs font-medium text-gray-500">
+                    Level: <strong className="text-gray-700">{item.levelBloom}</strong>
+                  </span>
+                </div>
+
+                {isValid ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Kaidah ABCD Lengkap
+                  </span>
                 ) : (
-                  <div className="bg-red-50 p-3 rounded-md">
-                    <div className="flex items-center gap-2 text-red-600">
-                      <AlertTriangle className="w-5 h-5" />
-                      <span className="font-semibold">Tidak Valid</span>
-                    </div>
-                    <ul className="list-disc list-inside mt-2 text-sm text-red-700 space-y-1">
-                      {(augmentedValidationResults[index].reasons || []).map((reason, rIndex) => (
-                        <li key={rIndex}>{reason}</li>
-                      ))}
-                    </ul>
-                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Struktur Belum Sempurna
+                  </span>
                 )}
               </div>
-            )}
-          </div>
-        ))}
+
+              <div className="mb-3">
+                <span className="text-xs font-semibold text-gray-500 block uppercase tracking-wider mb-1">
+                  Teks Indikator:
+                </span>
+                <div className={`text-gray-800 font-medium whitespace-pre-line leading-relaxed ${langClass} ${textDirClass}`} dir={isArabic ? 'rtl' : 'ltr'}>
+                  {item.indikator}
+                </div>
+              </div>
+
+              {/* Detail 4 Pilar ABCD Audit */}
+              <div className="mt-4 pt-3 border-t border-gray-200/80">
+                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-2 font-sans">
+                  Status 4 Pilar ABCD:
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-sans text-xs">
+                  <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+                    abcd.condition
+                      ? 'bg-blue-50/80 border-blue-200 text-blue-900'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px]">[C] Condition</span>
+                      <span className="font-bold text-[11px]">{abcd.condition ? '✓ Ada' : '✗ Belum'}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 mt-1">Stimulus Awal</span>
+                  </div>
+
+                  <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+                    abcd.audience
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px]">[A] Audience</span>
+                      <span className="font-bold text-[11px]">{abcd.audience ? '✓ Ada' : '✗ Belum'}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 mt-1">Peserta Didik</span>
+                  </div>
+
+                  <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+                    abcd.behavior
+                      ? 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px]">[B] Behavior</span>
+                      <span className="font-bold text-[11px]">{abcd.behavior ? '✓ Ada' : '✗ Belum'}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 mt-1">KKO & Materi</span>
+                  </div>
+
+                  <div className={`p-2 rounded-lg border flex flex-col justify-between ${
+                    abcd.degree
+                      ? 'bg-amber-50/80 border-amber-200 text-amber-900'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px]">[D] Degree</span>
+                      <span className="font-bold text-[11px]">{abcd.degree ? '✓ Ada' : '✗ Belum'}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 mt-1">Kriteria Ketepatan</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Alasan & Catatan Perbaikan jika tidak valid */}
+              {!isValid && res && (res.reasons || []).length > 0 && (
+                <div className="mt-3.5 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 font-sans">
+                  <div className="flex items-center gap-1.5 font-bold text-red-900 mb-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    Catatan Perbaikan Kaidah Indikator:
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-red-700 pl-1">
+                    {res.reasons.map((reason, rIdx) => (
+                      <li key={rIdx} className="leading-relaxed">{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex justify-between items-center mt-8 flex-wrap gap-4">

@@ -63,6 +63,18 @@ export interface KisiKisiItem {
 export interface ValidationResult {
   isValid: boolean;
   reasons: string[];
+  abcd?: {
+    audience: boolean;
+    behavior: boolean;
+    condition: boolean;
+    degree: boolean;
+    details?: {
+      audience?: string;
+      behavior?: string;
+      condition?: string;
+      degree?: string;
+    };
+  };
 }
 
 export interface SoalPG {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserInput, Bahasa, KisiKisiItem } from '../types';
 import { Eye, ChevronLeft, ChevronRight, Printer, Info, Check } from './icons';
+import { normalizeOptions, cleanStemText, formatKunciJawaban, isCorrectOption } from '../services/questionUtils';
 
 export interface SelectedQuestionData {
   bentuk: 'Pilihan Ganda' | 'Pilihan Ganda Kompleks' | 'Isian Singkat' | 'Uraian';
@@ -256,37 +257,37 @@ export const QuestionLivePreviewCard: React.FC<QuestionLivePreviewCardProps> = (
             <div className="flex items-start gap-2.5">
               <span className="font-bold shrink-0">{displayNoSoal}.</span>
               <div className="flex-1">
-                <p className="text-neutral-900 font-medium">
-                  {item.soal}
-                </p>
+                <div className="text-neutral-900 font-medium whitespace-pre-line leading-relaxed">
+                  {cleanStemText(item.soal, Boolean(item.options && item.options.length > 0))}
+                </div>
               </div>
             </div>
 
             {/* Type Specific Formatters */}
 
             {/* 1. PILIHAN GANDA */}
-            {bentuk === 'Pilihan Ganda' && item.options && (
+            {bentuk === 'Pilihan Ganda' && (
               <div className="mt-3.5 pl-6 space-y-2">
-                {item.options.map((opt: any) => {
-                  const isCorrect = opt.key === item.kunciJawaban;
+                {normalizeOptions(item.options).map((opt) => {
+                  const isCorrect = isCorrectOption(opt.key, item.kunciJawaban);
                   const showKey = previewMode === 'guru' && isCorrect;
 
                   return (
                     <div
                       key={opt.key}
-                      className={`flex items-start gap-2.5 p-1.5 rounded transition-colors ${
+                      className={`flex items-start gap-2.5 p-2 rounded-lg transition-colors ${
                         showKey
-                          ? 'bg-emerald-50/80 border border-emerald-300 text-emerald-950 font-semibold'
-                          : 'text-neutral-800'
+                          ? 'bg-emerald-50/90 border border-emerald-300 text-emerald-950 font-semibold shadow-xs'
+                          : 'text-neutral-800 hover:bg-neutral-50/60'
                       }`}
                     >
-                      <span className="font-bold shrink-0 w-5">
+                      <span className={`font-bold shrink-0 w-6 ${showKey ? 'text-emerald-800' : 'text-neutral-700'}`}>
                         {opt.key}.
                       </span>
-                      <span className="flex-1">{opt.value}</span>
+                      <span className="flex-1 whitespace-pre-line">{opt.value}</span>
                       {showKey && (
-                        <span className="ml-2 shrink-0 inline-flex items-center gap-1 text-[11px] font-sans font-bold text-emerald-700 bg-emerald-100/90 px-1.5 py-0.5 rounded">
-                          <Check className="w-3 h-3 text-emerald-600" />
+                        <span className="ml-2 shrink-0 inline-flex items-center gap-1 text-[11px] font-sans font-bold text-emerald-800 bg-emerald-200/90 px-2 py-0.5 rounded-full">
+                          <Check className="w-3 h-3 text-emerald-700" />
                           Kunci Jawaban
                         </span>
                       )}
@@ -297,32 +298,29 @@ export const QuestionLivePreviewCard: React.FC<QuestionLivePreviewCardProps> = (
             )}
 
             {/* 2. PILIHAN GANDA KOMPLEKS */}
-            {bentuk === 'Pilihan Ganda Kompleks' && item.options && (
+            {bentuk === 'Pilihan Ganda Kompleks' && (
               <div className="mt-3.5 pl-6 space-y-2">
-                {item.options.map((opt: any) => {
-                  const correctKeys = Array.isArray(item.kunciJawaban)
-                    ? item.kunciJawaban
-                    : [item.kunciJawaban];
-                  const isCorrect = correctKeys.includes(opt.key);
+                {normalizeOptions(item.options).map((opt) => {
+                  const isCorrect = isCorrectOption(opt.key, item.kunciJawaban);
                   const showKey = previewMode === 'guru' && isCorrect;
 
                   return (
                     <div
                       key={opt.key}
-                      className={`flex items-start gap-2.5 p-1.5 rounded transition-colors ${
+                      className={`flex items-start gap-2.5 p-2 rounded-lg transition-colors ${
                         showKey
-                          ? 'bg-teal-50/80 border border-teal-300 text-teal-950 font-semibold'
-                          : 'text-neutral-800'
+                          ? 'bg-teal-50/90 border border-teal-300 text-teal-950 font-semibold shadow-xs'
+                          : 'text-neutral-800 hover:bg-neutral-50/60'
                       }`}
                     >
-                      <span className="font-mono text-neutral-500 font-normal shrink-0">
+                      <span className={`font-mono shrink-0 select-none ${showKey ? 'text-teal-700 font-bold' : 'text-neutral-400'}`}>
                         {showKey ? '[✓]' : '[  ]'}
                       </span>
-                      <span className="font-bold shrink-0 w-5">{opt.key}.</span>
-                      <span className="flex-1">{opt.value}</span>
+                      <span className={`font-bold shrink-0 w-6 ${showKey ? 'text-teal-800' : 'text-neutral-700'}`}>{opt.key}.</span>
+                      <span className="flex-1 whitespace-pre-line">{opt.value}</span>
                       {showKey && (
-                        <span className="ml-2 shrink-0 inline-flex items-center gap-1 text-[11px] font-sans font-bold text-teal-700 bg-teal-100/90 px-1.5 py-0.5 rounded">
-                          <Check className="w-3 h-3 text-teal-600" />
+                        <span className="ml-2 shrink-0 inline-flex items-center gap-1 text-[11px] font-sans font-bold text-teal-800 bg-teal-200/90 px-2 py-0.5 rounded-full">
+                          <Check className="w-3 h-3 text-teal-700" />
                           Kunci
                         </span>
                       )}
@@ -345,7 +343,7 @@ export const QuestionLivePreviewCard: React.FC<QuestionLivePreviewCardProps> = (
                 {previewMode === 'guru' && item.kunciJawaban && (
                   <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-900 font-sans">
                     <span className="font-bold">Kunci Jawaban Guru:</span>{' '}
-                    <span className="font-semibold">{item.kunciJawaban}</span>
+                    <span className="font-semibold">{formatKunciJawaban(item.kunciJawaban)}</span>
                   </div>
                 )}
               </div>

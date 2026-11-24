@@ -18,12 +18,122 @@ const getGeminiClient = () => {
   });
 };
 
-const TEXT_MODEL = 'gemini-3.8-flash';
+const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-flash-latest'
+];
+
+function cleanJsonText(raw: string): string {
+  let cleaned = (raw || '').trim();
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+  }
+
+  // If there's leading/trailing text or commentary, extract the outermost valid JSON structure
+  const firstBracket = cleaned.indexOf('[');
+  const firstBrace = cleaned.indexOf('{');
+
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (lastBracket > firstBracket) {
+      return cleaned.substring(firstBracket, lastBracket + 1);
+    }
+  } else if (firstBrace !== -1) {
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (lastBrace > firstBrace) {
+      return cleaned.substring(firstBrace, lastBrace + 1);
+    }
+  }
+
+  return cleaned;
+}
+
+function isRetryableError(error: any): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes('503') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('429') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('504') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('fetch failed') ||
+    msg.includes('JSON') ||
+    error instanceof SyntaxError
+  );
+}
+
+async function executeWithModelFallback<T>(
+  operation: (modelName: string) => Promise<T>,
+  operationName = 'Gemini Operation'
+): Promise<T> {
+  let lastError: any = null;
+
+  for (const model of CANDIDATE_MODELS) {
+    let attempt = 0;
+    const maxAttemptsForModel = 2;
+    let delay = 1500;
+
+    while (attempt < maxAttemptsForModel) {
+      attempt++;
+      try {
+        console.log(`[Gemini Server] Executing ${operationName} with model: ${model} (attempt ${attempt}/${maxAttemptsForModel})`);
+        return await operation(model);
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Gemini Server] ${operationName} with model ${model} attempt ${attempt} failed: ${errMsg}`);
+
+        const isHighDemand = errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('overloaded');
+        if (isHighDemand) {
+          console.log(`[Gemini Server] Model ${model} is experiencing high demand (503). Switching immediately to fallback model...`);
+          break; // Switch to next fallback model immediately!
+        }
+
+        if (isRetryableError(err) && attempt < maxAttemptsForModel) {
+          console.log(`[Gemini Server] Retrying ${model} after ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 1.5;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  // All models failed; provide a clear and user-friendly error
+  const rawMsg = lastError instanceof Error ? lastError.message : String(lastError);
+  console.error(`[Gemini Server] All fallback models failed for ${operationName}:`, rawMsg);
+
+  if (rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE') || rawMsg.includes('high demand') || rawMsg.includes('overloaded')) {
+    throw new Error('Layanan AI Google saat ini sedang mengalami lonjakan beban tinggi (503). Silakan coba klik tombol Buat Kisi-Kisi kembali beberapa saat lagi.');
+  }
+  if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+    throw new Error('Batas kuota penggunaan AI tercapai. Silakan coba lagi dalam 1-2 menit.');
+  }
+  if (rawMsg.includes('API key') || rawMsg.includes('API_KEY')) {
+    throw new Error('Kunci API Gemini tidak valid atau belum diatur. Silakan periksa di Settings > Secrets.');
+  }
+  if (rawMsg.includes('JSON') || lastError instanceof SyntaxError) {
+    throw new Error('Format keluaran AI tidak lengkap. Silakan coba kurangi jumlah soal atau klik buat kembali.');
+  }
+
+  throw new Error(`Gagal memproses AI: ${rawMsg}`);
+}
 
 const withRetry = async <T>(
   apiCall: () => Promise<T>,
-  maxRetries = 3,
-  initialDelay = 2000
+  maxRetries = 2,
+  initialDelay = 1500
 ): Promise<T> => {
   let attempt = 0;
   let delay = initialDelay;
@@ -31,29 +141,14 @@ const withRetry = async <T>(
   while (true) {
     try {
       return await apiCall();
-    } catch (e) {
+    } catch (e: any) {
       attempt++;
       const errorMessage = e instanceof Error ? e.message : String(e);
-      const isRateLimitError = errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED');
-      const isJsonError = e instanceof SyntaxError || errorMessage.includes('JSON');
-
-      if ((isRateLimitError || isJsonError) && attempt < maxRetries) {
+      if (isRetryableError(e) && attempt < maxRetries) {
         console.warn(`[Gemini Server] Error encountered: ${errorMessage}. Retrying in ${delay / 1000}s... (Attempt ${attempt}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2;
+        delay *= 1.5;
       } else {
-        if (isRateLimitError) {
-          console.error("[Gemini Server] Max retries reached for rate limit error.");
-          throw new Error("Server sedang sibuk (batas penggunaan tercapai). Silakan coba lagi dalam beberapa menit.");
-        }
-        if (isJsonError) {
-          console.error("[Gemini Server] Max retries reached for JSON parse error.");
-          throw new Error("Respons dari AI terpotong atau tidak valid. Coba kurangi jumlah soal atau coba lagi.");
-        }
-        if (errorMessage.includes('API key not valid') || errorMessage.includes('API_KEY_INVALID')) {
-          throw new Error("Kunci API tidak valid. Mohon periksa kembali di Settings > Secrets.");
-        }
-        console.error(`[Gemini Server] API call failed after ${attempt} attempts:`, e);
         throw e;
       }
     }
@@ -75,10 +170,10 @@ const kisiKisiSchema = {
 };
 
 export async function serverGenerateKisiKisi(input: UserInput): Promise<KisiKisiItem[]> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const prompt = `
-    Anda adalah ahli penyusun kisi-kisi soal ujian. Berdasarkan informasi berikut:
+    Anda adalah ahli penyusun kisi-kisi soal ujian madrasah dan sekolah. Berdasarkan informasi berikut:
     - Mata Pelajaran: ${input.mataPelajaran}
     - Kelas: ${input.kelas}
     - Bahasa Keluaran: ${input.bahasa}
@@ -92,19 +187,29 @@ export async function serverGenerateKisiKisi(input: UserInput): Promise<KisiKisi
     - ${input.jumlahIsian} Isian Singkat
     - ${input.jumlahUraian} Uraian
     Untuk setiap soal, buatlah:
-    1. Indikator Soal yang spesifik, terukur, dan sesuai dengan materi, TP, dan CP. Indikator harus mendukung pembuatan soal bergaya Asesmen Kompetensi Minimum (AKM) atau Tes Kompetensi Akademik (TKA) Nasional yang menguji penalaran, literasi, dan numerasi.
-    2. Level Kognitif (Bloom) yang sesuai. Sesuaikan proporsi level kognitif dengan tingkat kesulitan yang diminta (${input.tingkatKesulitan}). Jika Mudah, perbanyak C1-C2; jika Sedang, dominan C3-C4; jika Sulit, perbanyak C4-C6 (HOTS).
+    1. Indikator Soal yang WAJIB MEMENUHI KAIDAH ABCD (Audience, Behavior, Condition, Degree) SECARA KETAT, DETAIL, DAN LENGKAP:
+       - **Condition (C)**: Kondisi/stimulus awal yang disajikan kepada siswa (misal: "Disajikan tabel data percobaan...", "Diberikan kutipan teks deskripsi...", "Disajikan gambar bagan organ pernapasan...", "Berdasarkan studi kasus...").
+       - **Audience (A)**: Subjek peserta didik yang dinyatakan secara eksplisit: "peserta didik" (atau dalam bahasa sasaran: "التِّلْمِيذُ" untuk Bahasa Arab, "para murid" untuk Bahasa Sunda, "para siswa" untuk Bahasa Jawa).
+       - **Behavior (B)**: Perilaku yang dapat diobservasi dan diukur dengan Kata Kerja Operasional (KKO) Taksonomi Bloom sesuai level kognitif yang diminta dan materi terkait (misal: "dapat menganalisis faktor penyebab...", "dapat menghitung luas permukaan...", "dapat mengklasifikasikan jenis-jenis...").
+       - **Degree (D)**: Derajat atau tingkat ketepatan/kriteria keberhasilan (misal: "dengan tepat", "dengan benar", "secara runtut dan tepat", "dengan teliti", "minimal 3 karakteristik secara lengkap").
+       *Pola Wajib Kalimat Indikator:*
+       "[Condition: Disajikan/Diberikan ...], [Audience: peserta didik] dapat [Behavior: [KKO Bloom] [materi spesifik]] [Degree: dengan tepat/benar]."
+       *Contoh:*
+       - C2: "Disajikan gambar daur hidup katak (C), peserta didik (A) dapat mengidentifikasi tahapan metamorfosis sempurna (B) dengan tepat (D)."
+       - C3: "Diberikan tabel data panjang dan lebar persegi (C), peserta didik (A) dapat menghitung keliling bangun tersebut (B) dengan benar (D)."
+       - C4: "Disajikan narasi kasus pencemaran lingkungan (C), peserta didik (A) dapat menganalisis penyebab utama penurunan kualitas air (B) secara kritis dan sistematis (D)."
+    2. Level Kognitif (Bloom) yang sesuai (C1-C6). Sesuaikan proporsi level kognitif dengan tingkat kesulitan yang diminta (${input.tingkatKesulitan}).
     3. Bentuk Soal (Pilihan Ganda, Pilihan Ganda Kompleks, Isian Singkat, Uraian).
     4. Nomor Soal yang berurutan.
     Pastikan jumlah soal untuk setiap bentuk sesuai dengan permintaan.
     PENTING: Seluruh teks keluaran WAJIB menggunakan ${input.bahasa}.
-    - Jika **Bahasa Arab**: Gunakan tata bahasa Arab yang fushha (formal) dengan kaidah Nahwu dan Shorof yang tepat. WAJIB menyertakan **harakat/tashkeel (syakal) yang lengkap, benar, dan konsisten** pada setiap huruf dan kata (fathah, kasrah, dammah, sukun, tanwin, shaddah, fathatain, kasratain, dammatain). Perhatikan penulisan hamzah (qatha' dan washal), alif lam (syamsiyah dan qamariyah), ta' marbuthah, dan huruf-huruf yang mirip. Pastikan i'rab (harakat akhir kata) benar sesuai kedudukannya dalam kalimat. Jangan mencampur dengan bahasa lain.
-    - Jika **Bahasa Jawa Hanacaraka**: Gunakan **Aksara Jawa (Unicode)** dengan penulisan yang baku. WAJIB menggunakan **sandhangan (wulu, suku, pepet, taling, taling tarung, layar, wignyan, cecak, pangkon)** dan **pasangan** yang tepat sesuai kaidah penulisan Aksara Jawa yang benar (Paugeran Sriwedari). Pastikan tidak ada spasi di antara aksara dalam satu kata, dan gunakan spasi antar kata. Jangan hanya menggunakan aksara legena.
-    - Jika **Bahasa Sunda**: Gunakan **Basa Sunda baku (lulugu)** yang baik dan benar sesuai dengan Undak-usuk Basa (Tatakrama Basa Sunda) yang tepat untuk konteks pendidikan/sekolah.
+    - Jika **Bahasa Arab**: Gunakan tata bahasa Arab yang fushha (formal) dengan kaidah Nahwu dan Shorof yang tepat. WAJIB menyertakan **harakat/tashkeel (syakal) yang lengkap, benar, dan konsisten** pada setiap huruf dan kata. Kaidah ABCD dalam Bahasa Arab: "بِنَاءً عَلَى... (C)، يَسْتَطِيعُ التِّلْمِيذُ (A) أَنْ [فعل مضارع KKO]... (B) بِشَكْلٍ صَحِيحٍ / بِدِقَّةٍ (D)."
+    - Jika **Bahasa Jawa Hanacaraka**: Gunakan **Aksara Jawa (Unicode)** dengan sandhangan dan pasangan yang benar.
+    - Jika **Bahasa Sunda**: Gunakan **Basa Sunda baku (lulugu)**: "Dumasar kana... (C), para murid (A) tiasa [KKO]... (B) kalayan leres (D)."
     `;
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -112,7 +217,7 @@ export async function serverGenerateKisiKisi(input: UserInput): Promise<KisiKisi
       },
     });
 
-    const text = response.text || "[]";
+    const text = cleanJsonText(response.text || "[]");
     const data = JSON.parse(text);
 
     if (!Array.isArray(data)) {
@@ -127,25 +232,35 @@ export async function serverGenerateKisiKisi(input: UserInput): Promise<KisiKisi
       cp: input.cp,
       tp: input.tp,
       materi: input.materi,
-      indikator: item.indikator,
-      levelBloom: item.levelBloom,
-      bentukSoal: item.bentukSoal,
-      noSoal: item.noSoal
+      indikator: item.indikator || `Memahami indikator materi ${input.materi}`,
+      levelBloom: item.levelBloom || 'C3',
+      bentukSoal: item.bentukSoal || BentukSoal.PG,
+      noSoal: typeof item.noSoal === 'number' ? item.noSoal : noSoalCounter - 1
     }));
-  });
+  }, 'serverGenerateKisiKisi');
 }
 
 const validationSchema = {
   type: Type.OBJECT,
   properties: {
     isValid: { type: Type.BOOLEAN },
-    reasons: { type: Type.ARRAY, items: { type: Type.STRING } }
+    reasons: { type: Type.ARRAY, items: { type: Type.STRING } },
+    abcd: {
+      type: Type.OBJECT,
+      properties: {
+        audience: { type: Type.BOOLEAN },
+        behavior: { type: Type.BOOLEAN },
+        condition: { type: Type.BOOLEAN },
+        degree: { type: Type.BOOLEAN },
+      },
+      required: ['audience', 'behavior', 'condition', 'degree']
+    }
   },
-  required: ['isValid', 'reasons']
+  required: ['isValid', 'reasons', 'abcd']
 };
 
 export async function serverValidateIndicators(kisiKisi: KisiKisiItem[]): Promise<ValidationResult[]> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const indicatorsToValidate = kisiKisi.map(item => ({
       noSoal: item.noSoal,
@@ -157,17 +272,23 @@ export async function serverValidateIndicators(kisiKisi: KisiKisiItem[]): Promis
     }));
 
     const prompt = `
-    Validasi SETIAP Indikator Soal dalam daftar berikut berdasarkan 7 kriteria:
-    1. Sesuai dengan Capaian Pembelajaran (CP)?
-    2. Sesuai dengan Tujuan Pembelajaran (TP)?
-    3. Menggunakan konsep ABCD (Audience, Behavior, Condition, Degree)?
-    4. Menggunakan Kata Kerja Operasional (KKO) yang sesuai Level Bloom?
-    5. Indikator dapat diukur dengan jelas?
-    6. Selaras dengan materi yang diajarkan?
-    7. Layak untuk dijadikan soal ujian?
+    Anda adalah penilai ahli kualitas kurikulum dan indikator soal ujian nasional (Kemdikbud/Kemenag).
+    Lakukan VALIDASI KETAT DAN MENDETAIL terhadap SETIAP Indikator Soal dalam daftar berikut berdasarkan KAIDAH MUTLAK ABCD (Audience, Behavior, Condition, Degree).
+
+    PANDUAN 4 UNSUR WAJIB ABCD:
+    1. Condition (C): Wajib memuat kondisi/stimulus awal yang disajikan kepada siswa (misal: "Disajikan teks bacaan...", "Diberikan tabel data...", "Disajikan gambar bagan..."). Jika indikator langsung dimulai tanpa stimulus atau kondisi tidak jelas, maka condition = false.
+    2. Audience (A): Wajib menyebutkan subjek peserta didik secara eksplisit ("peserta didik", "siswa", atau "التلميذ" / "para murid" / "para siswa"). Jika subjek peserta didik tidak ada, maka audience = false.
+    3. Behavior (B): Wajib memuat Kata Kerja Operasional (KKO) Taksonomi Bloom yang terukur dan materi spesifik yang diuji ("dapat mengidentifikasi...", "dapat menghitung...", "dapat menganalisis..."). Jika KKO tidak terukur (misal hanya "mengetahui" / "memahami" tanpa tindakan terukur) atau materi tidak jelas, maka behavior = false.
+    4. Degree (D): Wajib memuat derajat ketepatan, akurasi, kelengkapan, atau standar kriteria keberhasilan unjuk kerja ("dengan tepat", "dengan benar", "secara runtut dan tepat", "dengan teliti", "minimal 3 poin secara lengkap"). Jika tidak ada standar ketepatan, maka degree = false.
+
+    ATURAN KELULUSAN KETAT (STANDAR MUTLAK):
+    - 'isValid' HANYA BOLEH bernilai true JIKA dan HANYA JIKA ke-4 unsur ABCD bernilai true (audience: true, behavior: true, condition: true, degree: true) DAN indikator selaras dengan CP, TP, Materi, serta Level Bloom.
+    - Jika SALAH SATU ATAU LEBIH dari unsur ABCD tidak terpenuhi (false), maka 'isValid' WAJIB bernilai false!
+    - Pada 'reasons', sebutkan secara terperinci setiap unsur ABCD yang belum terpenuhi dan berikan perbaikannya. Contoh: "Belum memenuhi unsur Condition (belum ada stimulus pengantar seperti 'Disajikan teks...')", "Belum memenuhi unsur Degree (belum ada tingkat ketepatan seperti 'dengan tepat')".
+
     Daftar Indikator dan Konteksnya:
     ${JSON.stringify(indicatorsToValidate, null, 2)}
-    Berikan hasil validasi dalam format JSON ARRAY. Setiap objek dalam array harus sesuai dengan skema yang diberikan dan MEREPRESENTASIKAN SATU INDIKATOR. Urutan dalam array hasil HARUS SAMA dengan urutan dalam daftar input. Jika sebuah indikator tidak valid, sebutkan semua alasan mengapa.
+    Berikan hasil validasi dalam format JSON ARRAY sesuai skema. Urutan dalam array hasil HARUS SAMA PERSIS dengan urutan dalam daftar input.
     `;
 
     const validationSchemaArray = {
@@ -176,7 +297,7 @@ export async function serverValidateIndicators(kisiKisi: KisiKisiItem[]): Promis
     };
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -184,13 +305,13 @@ export async function serverValidateIndicators(kisiKisi: KisiKisiItem[]): Promis
       },
     });
 
-    const text = response.text || "[]";
+    const text = cleanJsonText(response.text || "[]");
     const results = JSON.parse(text) as ValidationResult[];
     if (results.length !== kisiKisi.length) {
       throw new Error("Jumlah hasil validasi tidak cocok dengan jumlah input indikator.");
     }
     return results;
-  });
+  }, 'serverValidateIndicators');
 }
 
 const fixAllIndicatorsSchema = {
@@ -206,7 +327,7 @@ const fixAllIndicatorsSchema = {
 };
 
 export async function serverFixAllInvalidIndicators(invalidItems: { item: KisiKisiItem; feedback: ValidationResult }[]): Promise<KisiKisiItem[]> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const itemsToFix = invalidItems.map(({ item, feedback }) => ({
       noSoal: item.noSoal,
@@ -223,14 +344,29 @@ export async function serverFixAllInvalidIndicators(invalidItems: { item: KisiKi
     }
 
     const prompt = `
-    Daftar indikator soal berikut dinyatakan tidak valid.
+    Anda adalah ahli penyempurnaan kisi-kisi dan indikator soal ujian nasional/madrasah.
+    Daftar indikator soal berikut dinyatakan TIDAK VALID karena melanggar atau kurang memenuhi kaidah ABCD (Audience, Behavior, Condition, Degree).
+    
+    Data Indikator yang Perlu Diperbaiki:
     ${JSON.stringify(itemsToFix, null, 2)}
-    Tolong perbaiki SETIAP indikator tersebut agar menjadi valid, spesifik, terukur, dan sesuai dengan semua konteks (CP, TP, Materi, Level Bloom) yang diberikan.
-    Kembalikan hasilnya dalam format JSON ARRAY. Setiap objek dalam array harus berisi 'noSoal' asli dan 'revisedIndicator' yang sudah diperbaiki.
+
+    TUGAS ANDA:
+    Tulis ulang dan perbaiki SETIAP indikator tersebut agar 100% MEMENUHI KAIDAH ABCD SECARA KETAT, DETAIL, DAN LENGKAP:
+    Formula Wajib:
+    "[Condition: Disajikan/Diberikan ... (stimulus konkret sesuai materi)], [Audience: peserta didik] dapat [Behavior: [KKO Bloom terukur sesuai level Bloom] [materi spesifik]] [Degree: dengan tepat dan benar]."
+
+    Pastikan:
+    1. Condition (C) memuat stimulus nyata (teks narasi, tabel data, gambar diagram, kasus kontekstual).
+    2. Audience (A) selalu menyebutkan "peserta didik" (atau dalam bahasa sasaran: "التِّلْمِيذُ" untuk Bahasa Arab, "para murid" untuk Bahasa Sunda, "para siswa" untuk Bahasa Jawa).
+    3. Behavior (B) memuat KKO Bloom yang operasional dan dapat diukur sesuai level kognitif masing-masing soal.
+    4. Degree (D) menyebutkan standar ketepatan ("dengan tepat", "dengan benar", "secara runtut dan tepat", "dengan teliti").
+    5. Seluruh teks keluaran wajib menggunakan bahasa yang sama dengan indikator asli.
+
+    Kembalikan hasilnya dalam format JSON ARRAY. Setiap objek dalam array harus berisi 'noSoal' asli dan 'revisedIndicator' yang sudah diperbaiki sempurna sesuai kaidah ABCD.
     `;
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -238,7 +374,7 @@ export async function serverFixAllInvalidIndicators(invalidItems: { item: KisiKi
       },
     });
 
-    const text = response.text || "[]";
+    const text = cleanJsonText(response.text || "[]");
     const fixedResults: { noSoal: number; revisedIndicator: string }[] = JSON.parse(text);
 
     const updatedKisiKisiItems: KisiKisiItem[] = [];
@@ -254,11 +390,11 @@ export async function serverFixAllInvalidIndicators(invalidItems: { item: KisiKi
     });
 
     return updatedKisiKisiItems;
-  });
+  }, 'serverFixAllInvalidIndicators');
 }
 
 export async function serverGenerateSingleSoal(kisiItem: KisiKisiItem, bahasa: string, tingkatKesulitan: string): Promise<any> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const prompt = `
     Berdasarkan indikator soal berikut yang telah divalidasi, buatlah 1 buah soal ujian dalam ${bahasa}.
@@ -327,7 +463,7 @@ export async function serverGenerateSingleSoal(kisiItem: KisiKisiItem, bahasa: s
     }
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -336,9 +472,102 @@ export async function serverGenerateSingleSoal(kisiItem: KisiKisiItem, bahasa: s
       },
     });
 
-    const text = response.text || "{}";
-    return JSON.parse(text);
-  });
+    const text = cleanJsonText(response.text || "{}");
+    const raw = JSON.parse(text);
+    return sanitizeSingleSoal(raw, kisiItem.bentukSoal, kisiItem.noSoal);
+  }, 'serverGenerateSingleSoal');
+}
+
+function sanitizeSingleSoal(raw: any, bentukSoal?: string, fallbackNo = 1): any {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      noSoal: fallbackNo,
+      soal: String(raw ?? ''),
+    };
+  }
+
+  const noSoal = typeof raw.noSoal === 'number' ? raw.noSoal : fallbackNo;
+  let rawSoal = typeof raw.soal === 'string' ? raw.soal.trim() : String(raw.soal ?? '');
+
+  // Strip duplicated choices from the question stem if options array is present
+  if (Array.isArray(raw.options) && raw.options.length > 0) {
+    const trailingChoicesRegex = /\n\s*(?:[A-Da-d][\.\:\)]|\([A-Da-d]\))\s+[\s\S]*?(?:\n\s*(?:[B-Db-d][\.\:\)]|\([B-Db-d]\))\s+[\s\S]*?)+$/;
+    if (trailingChoicesRegex.test(rawSoal)) {
+      rawSoal = rawSoal.replace(trailingChoicesRegex, '').trim();
+    }
+  }
+
+  let normalizedOptions: { key: string; value: string }[] | undefined = undefined;
+  if (Array.isArray(raw.options)) {
+    normalizedOptions = raw.options.map((opt: any, i: number) => {
+      if (typeof opt === 'string') {
+        const match = opt.trim().match(/^([A-Da-d0-9])[\.\:\)\-]\s*(.+)$/);
+        return match
+          ? { key: match[1].toUpperCase(), value: match[2].trim() }
+          : { key: String.fromCharCode(65 + i), value: opt.trim() };
+      }
+      if (opt && typeof opt === 'object') {
+        const key = String(opt.key ?? opt.kunci ?? opt.huruf ?? String.fromCharCode(65 + i)).replace(/[\.\:\)\-\s]/g, '').toUpperCase() || String.fromCharCode(65 + i);
+        const value = String(opt.value ?? opt.teks ?? opt.text ?? opt.jawaban ?? '').trim();
+        return { key, value };
+      }
+      return { key: String.fromCharCode(65 + i), value: String(opt ?? '') };
+    });
+  }
+
+  const result: any = {
+    noSoal,
+    soal: rawSoal,
+  };
+
+  if (normalizedOptions) {
+    result.options = normalizedOptions;
+  }
+
+  if (raw.kunciJawaban !== undefined) {
+    result.kunciJawaban = raw.kunciJawaban;
+  }
+
+  if (raw.petunjuk) {
+    result.petunjuk = String(raw.petunjuk).trim();
+  }
+
+  if (raw.rubrik && typeof raw.rubrik === 'object') {
+    result.rubrik = {
+      skor4: String(raw.rubrik.skor4 ?? 'Sangat baik, lengkap, dan sistematis'),
+      skor3: String(raw.rubrik.skor3 ?? 'Baik dan relevan'),
+      skor2: String(raw.rubrik.skor2 ?? 'Cukup, ada beberapa kekurangan'),
+      skor1: String(raw.rubrik.skor1 ?? 'Kurang atau tidak relevan'),
+    };
+  }
+
+  return result;
+}
+
+function sanitizeSoalCollection(raw: any): Soal {
+  const output: Soal = {
+    pg: [],
+    pgKompleks: [],
+    isian: [],
+    uraian: []
+  };
+
+  if (raw && typeof raw === 'object') {
+    if (Array.isArray(raw.pg)) {
+      output.pg = raw.pg.map((item: any, i: number) => sanitizeSingleSoal(item, 'Pilihan Ganda', i + 1));
+    }
+    if (Array.isArray(raw.pgKompleks)) {
+      output.pgKompleks = raw.pgKompleks.map((item: any, i: number) => sanitizeSingleSoal(item, 'Pilihan Ganda Kompleks', i + 1));
+    }
+    if (Array.isArray(raw.isian)) {
+      output.isian = raw.isian.map((item: any, i: number) => sanitizeSingleSoal(item, 'Isian Singkat', i + 1));
+    }
+    if (Array.isArray(raw.uraian)) {
+      output.uraian = raw.uraian.map((item: any, i: number) => sanitizeSingleSoal(item, 'Uraian', i + 1));
+    }
+  }
+
+  return output;
 }
 
 const soalSchema = {
@@ -372,7 +601,7 @@ const soalSchema = {
 };
 
 export async function serverGenerateSoal(kisiKisi: KisiKisiItem[], bahasa: string, tingkatKesulitan: string): Promise<Soal> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const prompt = `
     Berdasarkan kisi-kisi berikut yang telah divalidasi, buatlah soal ujian lengkap dalam ${bahasa}.
@@ -410,7 +639,7 @@ export async function serverGenerateSoal(kisiKisi: KisiKisiItem[], bahasa: strin
     `;
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -419,13 +648,14 @@ export async function serverGenerateSoal(kisiKisi: KisiKisiItem[], bahasa: strin
       },
     });
 
-    const text = response.text || "{}";
-    return JSON.parse(text) as Soal;
-  });
+    const text = cleanJsonText(response.text || "{}");
+    const raw = JSON.parse(text);
+    return sanitizeSoalCollection(raw);
+  }, 'serverGenerateSoal');
 }
 
 export async function serverAnalyzeSoal(kisiKisi: KisiKisiItem[], soal: Soal, userInput: UserInput): Promise<AnalisisSoal> {
-  return withRetry(async () => {
+  return executeWithModelFallback(async (modelName: string) => {
     const ai = getGeminiClient();
     const prompt = `
     Tolong analisis kualitas soal yang telah dihasilkan berdasarkan kurikulum dan kisi-kisi berikut.
@@ -462,7 +692,7 @@ export async function serverAnalyzeSoal(kisiKisi: KisiKisiItem[], soal: Soal, us
     };
 
     const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
+      model: modelName,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -471,9 +701,9 @@ export async function serverAnalyzeSoal(kisiKisi: KisiKisiItem[], soal: Soal, us
       },
     });
 
-    const text = response.text || "{}";
+    const text = cleanJsonText(response.text || "{}");
     return JSON.parse(text) as AnalisisSoal;
-  });
+  }, 'serverAnalyzeSoal');
 }
 
 export interface GenerateImageServerParams {

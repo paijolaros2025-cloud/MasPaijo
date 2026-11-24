@@ -6,7 +6,16 @@ async function handleApiResponse<T>(response: Response): Promise<T> {
     try {
       const errJson = await response.json();
       if (errJson && errJson.error) {
-        errorMsg = errJson.error;
+        let msg = errJson.error;
+        try {
+          const parsed = JSON.parse(msg);
+          if (parsed?.error?.message) {
+            msg = parsed.error.message;
+          }
+        } catch {
+          // not JSON string
+        }
+        errorMsg = msg;
       }
     } catch {
       // response might not be json

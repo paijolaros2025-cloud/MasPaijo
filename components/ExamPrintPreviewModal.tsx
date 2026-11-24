@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Soal, UserInput, Bahasa, KisiKisiItem } from '../types';
 import Button from './Button';
 import { Printer, X, Check, Eye } from './icons';
+import { normalizeOptions, cleanStemText, formatKunciJawaban, isCorrectOption } from '../services/questionUtils';
 
 interface ExamPrintPreviewModalProps {
   soal: Soal;
@@ -339,57 +340,62 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
               <div className="space-y-4">
                 {soal.pg.map((item, idx) => {
                   const itemKisi = getKisiDetails(item.noSoal, 'Pilihan Ganda');
+                  const opts = normalizeOptions(item.options);
+                  const isLongOptions = opts.some((o) => (o.value || '').length > 40);
+
                   return (
                     <div key={`pg-${item.noSoal || idx}`} className="page-break-avoid">
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">{item.noSoal}.</span>
                         <div className="flex-1">
-                          <p
-                            className={`font-medium ${
+                          <div
+                            className={`font-medium whitespace-pre-line leading-relaxed ${
                               isArabic ? 'font-serif text-right text-lg' : ''
                             }`}
                             dir={isArabic ? 'rtl' : 'ltr'}
                           >
-                            {item.soal}
-                          </p>
+                            {cleanStemText(item.soal, opts.length > 0)}
+                          </div>
 
                           {/* Options grid */}
-                          <div
-                            className={`mt-2 grid ${
-                              item.options.some((o) => o.value.length > 40)
-                                ? 'grid-cols-1 gap-1'
-                                : 'grid-cols-2 sm:grid-cols-4 gap-2'
-                            } text-[12px]`}
-                            dir={isArabic ? 'rtl' : 'ltr'}
-                          >
-                            {item.options.map((opt) => {
-                              const isKey = printMode === 'guru' && opt.key === item.kunciJawaban;
-                              return (
-                                <div
-                                  key={opt.key}
-                                  className={`flex items-start gap-1.5 p-1 rounded ${
-                                    isKey
-                                      ? 'bg-amber-100 font-bold border border-amber-400 text-black'
-                                      : ''
-                                  }`}
-                                >
-                                  <span className="font-bold shrink-0">{opt.key}.</span>
-                                  <span>{opt.value}</span>
-                                  {isKey && (
-                                    <span className="ml-auto text-[10px] bg-amber-600 text-white px-1 rounded">
-                                      KUNCI
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                          {opts.length > 0 && (
+                            <div
+                              className={`mt-2 grid ${
+                                isLongOptions
+                                  ? 'grid-cols-1 gap-1'
+                                  : 'grid-cols-2 sm:grid-cols-4 gap-2'
+                              } text-[12px]`}
+                              dir={isArabic ? 'rtl' : 'ltr'}
+                            >
+                              {opts.map((opt) => {
+                                const isKey = printMode === 'guru' && isCorrectOption(opt.key, item.kunciJawaban);
+                                return (
+                                  <div
+                                    key={opt.key}
+                                    className={`flex items-start gap-1.5 p-1 rounded ${
+                                      isKey
+                                        ? 'bg-amber-100 font-bold border border-amber-400 text-black'
+                                        : ''
+                                    }`}
+                                  >
+                                    <span className="font-bold shrink-0">{opt.key}.</span>
+                                    <span className="flex-1 whitespace-pre-line">{opt.value}</span>
+                                    {isKey && (
+                                      <span className="ml-auto text-[10px] bg-amber-600 text-white px-1 rounded shrink-0">
+                                        KUNCI
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {/* Guru Meta Information */}
                           {printMode === 'guru' && (
                             <div className="mt-1.5 pt-1 border-t border-dashed border-gray-300 text-[11px] flex flex-wrap items-center gap-3 text-gray-600">
                               <span className="font-bold text-emerald-800">
-                                Kunci: {item.kunciJawaban}
+                                Kunci: {formatKunciJawaban(item.kunciJawaban)}
                               </span>
                               {itemKisi && (
                                 <>
@@ -419,61 +425,63 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
               <div className="space-y-5">
                 {soal.pgKompleks.map((item, idx) => {
                   const itemKisi = getKisiDetails(item.noSoal, 'Kompleks');
+                  const opts = normalizeOptions(item.options);
+
                   return (
                     <div key={`pgk-${item.noSoal || idx}`} className="page-break-avoid">
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">{item.noSoal}.</span>
                         <div className="flex-1">
-                          <p
-                            className={`font-medium ${
+                          <div
+                            className={`font-medium whitespace-pre-line leading-relaxed ${
                               isArabic ? 'font-serif text-right text-lg' : ''
                             }`}
                             dir={isArabic ? 'rtl' : 'ltr'}
                           >
-                            {item.soal}
-                          </p>
+                            {cleanStemText(item.soal, opts.length > 0)}
+                          </div>
                           {item.petunjuk && (
-                            <p className="text-[11px] italic text-gray-600 mt-0.5">
+                            <p className="text-[11px] italic text-gray-600 mt-0.5 whitespace-pre-line">
                               {item.petunjuk}
                             </p>
                           )}
 
                           {/* Options Checklist */}
-                          <div className="mt-2 space-y-1.5 text-[12px]" dir={isArabic ? 'rtl' : 'ltr'}>
-                            {item.options.map((opt) => {
-                              const isCheckedKey =
-                                printMode === 'guru' &&
-                                Array.isArray(item.kunciJawaban) &&
-                                item.kunciJawaban.includes(opt.key);
-                              return (
-                                <div
-                                  key={opt.key}
-                                  className={`flex items-start gap-2.5 p-1 rounded ${
-                                    isCheckedKey
-                                      ? 'bg-amber-100 font-bold border border-amber-400 text-black'
-                                      : ''
-                                  }`}
-                                >
-                                  <span className="inline-flex items-center justify-center w-4 h-4 border border-black rounded text-[11px] shrink-0 mt-0.5">
-                                    {isCheckedKey ? '✓' : ''}
-                                  </span>
-                                  <span className="font-semibold shrink-0">{opt.key}.</span>
-                                  <span className="flex-1">{opt.value}</span>
-                                  {isCheckedKey && (
-                                    <span className="text-[10px] bg-amber-600 text-white px-1 rounded">
-                                      BENAR
+                          {opts.length > 0 && (
+                            <div className="mt-2 space-y-1.5 text-[12px]" dir={isArabic ? 'rtl' : 'ltr'}>
+                              {opts.map((opt) => {
+                                const isCheckedKey =
+                                  printMode === 'guru' && isCorrectOption(opt.key, item.kunciJawaban);
+                                return (
+                                  <div
+                                    key={opt.key}
+                                    className={`flex items-start gap-2.5 p-1 rounded ${
+                                      isCheckedKey
+                                        ? 'bg-amber-100 font-bold border border-amber-400 text-black'
+                                        : ''
+                                    }`}
+                                  >
+                                    <span className="inline-flex items-center justify-center w-4 h-4 border border-black rounded text-[11px] shrink-0 mt-0.5 select-none font-mono">
+                                      {isCheckedKey ? '✓' : ''}
                                     </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                                    <span className="font-semibold shrink-0">{opt.key}.</span>
+                                    <span className="flex-1 whitespace-pre-line">{opt.value}</span>
+                                    {isCheckedKey && (
+                                      <span className="text-[10px] bg-amber-600 text-white px-1 rounded shrink-0">
+                                        BENAR
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {/* Guru Meta */}
                           {printMode === 'guru' && (
                             <div className="mt-1.5 pt-1 border-t border-dashed border-gray-300 text-[11px] flex flex-wrap items-center gap-3 text-gray-600">
                               <span className="font-bold text-emerald-800">
-                                Kunci: {(item.kunciJawaban || []).join(', ')}
+                                Kunci: {formatKunciJawaban(item.kunciJawaban)}
                               </span>
                               {itemKisi && (
                                 <>
@@ -508,14 +516,14 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">{item.noSoal}.</span>
                         <div className="flex-1">
-                          <p
-                            className={`font-medium ${
+                          <div
+                            className={`font-medium whitespace-pre-line leading-relaxed ${
                               isArabic ? 'font-serif text-right text-lg' : ''
                             }`}
                             dir={isArabic ? 'rtl' : 'ltr'}
                           >
-                            {item.soal}
-                          </p>
+                            {cleanStemText(item.soal, false)}
+                          </div>
 
                           {/* Student Dotted Line */}
                           {printMode === 'siswa' && (
@@ -528,7 +536,7 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                           {printMode === 'guru' && (
                             <div className="mt-2 p-2 bg-emerald-50 border border-emerald-300 rounded text-[11px]">
                               <p className="font-bold text-emerald-900">
-                                Kunci Jawaban: <span className="font-normal">{item.kunciJawaban}</span>
+                                Kunci Jawaban: <span className="font-semibold">{formatKunciJawaban(item.kunciJawaban)}</span>
                               </p>
                               {itemKisi && (
                                 <p className="text-gray-600 mt-0.5">
@@ -562,14 +570,14 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">{item.noSoal}.</span>
                         <div className="flex-1">
-                          <p
-                            className={`font-medium ${
+                          <div
+                            className={`font-medium whitespace-pre-line leading-relaxed ${
                               isArabic ? 'font-serif text-right text-lg' : ''
                             }`}
                             dir={isArabic ? 'rtl' : 'ltr'}
                           >
-                            {item.soal}
-                          </p>
+                            {cleanStemText(item.soal, false)}
+                          </div>
 
                           {/* Student Answer Box Lines */}
                           {printMode === 'siswa' && (
@@ -634,7 +642,7 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                     {soal.pg.map((s) => (
                       <div key={s.noSoal} className="border border-black p-1">
                         <div className="text-[10px] text-gray-500 font-bold">{s.noSoal}</div>
-                        <div className="font-extrabold text-[13px]">{s.kunciJawaban}</div>
+                        <div className="font-extrabold text-[13px]">{formatKunciJawaban(s.kunciJawaban)}</div>
                       </div>
                     ))}
                   </div>
@@ -649,7 +657,7 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                     {soal.pgKompleks.map((s) => (
                       <div key={s.noSoal} className="border border-black p-1.5">
                         <span className="font-bold mr-1">No. {s.noSoal}:</span>
-                        <span className="font-semibold">{(s.kunciJawaban || []).join(', ')}</span>
+                        <span className="font-semibold">{formatKunciJawaban(s.kunciJawaban)}</span>
                       </div>
                     ))}
                   </div>
@@ -664,7 +672,7 @@ export const ExamPrintPreviewModal: React.FC<ExamPrintPreviewModalProps> = ({
                     {soal.isian.map((s) => (
                       <div key={s.noSoal} className="flex gap-2 border-b border-gray-200 pb-0.5">
                         <span className="font-bold w-12 shrink-0">No. {s.noSoal}:</span>
-                        <span className="font-medium text-gray-800">{s.kunciJawaban}</span>
+                        <span className="font-medium text-gray-800">{formatKunciJawaban(s.kunciJawaban)}</span>
                       </div>
                     ))}
                   </div>

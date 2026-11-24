@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Soal, KisiKisiItem, BentukSoal, Bahasa, UserInput } from '../types';
 import Button from './Button';
 import { X, Save, Search, Table, AlertTriangle, Check, RefreshCw } from './icons';
+import { normalizeOptions, cleanStemText } from '../services/questionUtils';
 
 interface BulkEditQuestionsModalProps {
   isOpen: boolean;
@@ -91,19 +92,20 @@ export const BulkEditQuestionsModal: React.FC<BulkEditQuestionsModalProps> = ({
       soal.pg.forEach((item, idx) => {
         const origNo = (item as any).originalNoSoal ?? item.noSoal;
         const matchedKisi = kisiKisi.find(k => k.noSoal === origNo);
+        const normOpts = item.options ? normalizeOptions(item.options) : [
+          { key: 'A', value: '' },
+          { key: 'B', value: '' },
+          { key: 'C', value: '' },
+          { key: 'D', value: '' },
+        ];
         items.push({
           id: `pg-${origNo}-${idx}`,
           type: 'PG',
           typeName: 'Pilihan Ganda',
           originalNoSoal: origNo,
           displayNoSoal: item.noSoal,
-          soalText: item.soal || '',
-          options: item.options ? JSON.parse(JSON.stringify(item.options)) : [
-            { key: 'A', value: '' },
-            { key: 'B', value: '' },
-            { key: 'C', value: '' },
-            { key: 'D', value: '' },
-          ],
+          soalText: cleanStemText(item.soal || '', normOpts.length > 0),
+          options: normOpts,
           kunciJawaban: item.kunciJawaban || 'A',
           levelBloom: matchedKisi ? matchedKisi.levelBloom : 'C2',
           indikator: matchedKisi ? matchedKisi.indikator : '',
@@ -117,19 +119,20 @@ export const BulkEditQuestionsModal: React.FC<BulkEditQuestionsModalProps> = ({
       soal.pgKompleks.forEach((item, idx) => {
         const origNo = (item as any).originalNoSoal ?? item.noSoal;
         const matchedKisi = kisiKisi.find(k => k.noSoal === origNo);
+        const normOpts = item.options ? normalizeOptions(item.options) : [
+          { key: 'A', value: '' },
+          { key: 'B', value: '' },
+          { key: 'C', value: '' },
+          { key: 'D', value: '' },
+        ];
         items.push({
           id: `pgk-${origNo}-${idx}`,
           type: 'PGK',
           typeName: 'Pilihan Ganda Kompleks',
           originalNoSoal: origNo,
           displayNoSoal: item.noSoal,
-          soalText: item.soal || '',
-          options: item.options ? JSON.parse(JSON.stringify(item.options)) : [
-            { key: 'A', value: '' },
-            { key: 'B', value: '' },
-            { key: 'C', value: '' },
-            { key: 'D', value: '' },
-          ],
+          soalText: cleanStemText(item.soal || '', normOpts.length > 0),
+          options: normOpts,
           kunciJawaban: Array.isArray(item.kunciJawaban) ? [...item.kunciJawaban] : [item.kunciJawaban || 'A'],
           petunjuk: item.petunjuk || 'Pilihlah jawaban yang benar!',
           levelBloom: matchedKisi ? matchedKisi.levelBloom : 'C4',
@@ -150,7 +153,7 @@ export const BulkEditQuestionsModal: React.FC<BulkEditQuestionsModalProps> = ({
           typeName: 'Isian Singkat',
           originalNoSoal: origNo,
           displayNoSoal: item.noSoal,
-          soalText: item.soal || '',
+          soalText: cleanStemText(item.soal || '', false),
           kunciJawaban: item.kunciJawaban || '',
           levelBloom: matchedKisi ? matchedKisi.levelBloom : 'C2',
           indikator: matchedKisi ? matchedKisi.indikator : '',
@@ -170,7 +173,7 @@ export const BulkEditQuestionsModal: React.FC<BulkEditQuestionsModalProps> = ({
           typeName: 'Uraian',
           originalNoSoal: origNo,
           displayNoSoal: item.noSoal,
-          soalText: item.soal || '',
+          soalText: cleanStemText(item.soal || '', false),
           kunciJawaban: '',
           rubrik: item.rubrik ? { ...item.rubrik } : { skor4: '', skor3: '', skor2: '', skor1: '' },
           levelBloom: matchedKisi ? matchedKisi.levelBloom : 'C5',

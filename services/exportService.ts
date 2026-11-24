@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import saveAs from 'file-saver';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel, AlignmentType } from 'docx';
 import { KisiKisiItem, Soal, UserInput, Bahasa } from '../types';
+import { normalizeOptions, cleanStemText } from './questionUtils';
 
 export function exportToXlsx(kisiKisi: KisiKisiItem[], fileName: string): void {
   const worksheetData = kisiKisi.map(item => ({
@@ -71,13 +72,14 @@ export function exportToDocx(soal: Soal, userInput: UserInput): void {
   if((soal.pg || []).length > 0) {
       docChildren.push(new Paragraph({ text: labels.pg, style: "headline", alignment: alignment }));
       (soal.pg || []).forEach(s => {
+          const opts = normalizeOptions(s.options);
           docChildren.push(new Paragraph({
-              children: [new TextRun({ text: `${s.noSoal}. ${s.soal}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
+              children: [new TextRun({ text: `${s.noSoal}. ${cleanStemText(s.soal, opts.length > 0)}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
               spacing: { after: 100 },
               alignment: alignment,
               bidirectional: isArabic
           }));
-          (s.options || []).forEach(opt => {
+          opts.forEach(opt => {
               docChildren.push(new Paragraph({
                   children: [new TextRun({ text: `   ${opt.key}. ${opt.value}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
                   alignment: alignment,
@@ -91,21 +93,24 @@ export function exportToDocx(soal: Soal, userInput: UserInput): void {
   if((soal.pgKompleks || []).length > 0) {
       docChildren.push(new Paragraph({ text: labels.pgk, style: "headline", alignment: alignment }));
       (soal.pgKompleks || []).forEach(s => {
+          const opts = normalizeOptions(s.options);
           docChildren.push(new Paragraph({
-              children: [new TextRun({ text: `${s.noSoal}. ${s.soal}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
+              children: [new TextRun({ text: `${s.noSoal}. ${cleanStemText(s.soal, opts.length > 0)}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
               spacing: { after: 100 },
               alignment: alignment,
               bidirectional: isArabic
           }));
-          docChildren.push(new Paragraph({
-              children: [new TextRun({ text: `   (${s.petunjuk})`, italics: true, rightToLeft: isArabic, size: fontSize - 4, font: fontName })],
-              spacing: { after: 100 },
-              alignment: alignment,
-              bidirectional: isArabic
-          }));
-          (s.options || []).forEach(opt => {
+          if (s.petunjuk) {
               docChildren.push(new Paragraph({
-                  children: [new TextRun({ text: `   ${opt.key}. ${opt.value}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
+                  children: [new TextRun({ text: `   (${s.petunjuk})`, italics: true, rightToLeft: isArabic, size: fontSize - 4, font: fontName })],
+                  spacing: { after: 100 },
+                  alignment: alignment,
+                  bidirectional: isArabic
+              }));
+          }
+          opts.forEach(opt => {
+              docChildren.push(new Paragraph({
+                  children: [new TextRun({ text: `   [  ] ${opt.key}. ${opt.value}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
                   alignment: alignment,
                   bidirectional: isArabic
               }));
@@ -118,7 +123,7 @@ export function exportToDocx(soal: Soal, userInput: UserInput): void {
       docChildren.push(new Paragraph({ text: labels.isian, style: "headline", alignment: alignment }));
       (soal.isian || []).forEach(s => {
           docChildren.push(new Paragraph({
-              children: [new TextRun({ text: `${s.noSoal}. ${s.soal}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
+              children: [new TextRun({ text: `${s.noSoal}. ${cleanStemText(s.soal, false)}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
               spacing: { after: 200 },
               alignment: alignment,
               bidirectional: isArabic
@@ -136,7 +141,7 @@ export function exportToDocx(soal: Soal, userInput: UserInput): void {
       docChildren.push(new Paragraph({ text: labels.uraian, style: "headline", alignment: alignment }));
       (soal.uraian || []).forEach(s => {
           docChildren.push(new Paragraph({
-              children: [new TextRun({ text: `${s.noSoal}. ${s.soal}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
+              children: [new TextRun({ text: `${s.noSoal}. ${cleanStemText(s.soal, false)}`, rightToLeft: isArabic, size: fontSize, font: fontName })],
               spacing: { after: 200 },
               alignment: alignment,
               bidirectional: isArabic

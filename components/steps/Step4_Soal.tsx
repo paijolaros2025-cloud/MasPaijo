@@ -10,6 +10,12 @@ import { AlertTriangle, X, RefreshCw, Info, Printer, Table, Check, Eye } from '.
 import ExamPrintPreviewModal from '../ExamPrintPreviewModal';
 import BulkEditQuestionsModal from '../BulkEditQuestionsModal';
 import QuestionLivePreviewCard, { SelectedQuestionData } from '../QuestionLivePreviewCard';
+import {
+  normalizeOptions,
+  formatKunciJawaban,
+  isCorrectOption,
+  cleanStemText,
+} from '../../services/questionUtils';
 
 interface Props {
   appState: AppState;
@@ -342,29 +348,39 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
             )}
             {filteredPg.length > 0 && (
                 <div className="break-inside-avoid-page">
-                    <h3 className={`text-xl font-semibold ${isPreview ? 'text-black border-black' : 'text-green-700 border-green-200'} border-b-2 pb-2 mb-4`}>{labels.pg}</h3>
+                    <div className="flex items-center justify-between border-b-2 border-emerald-600 pb-2 mb-4">
+                      <h3 className={`text-xl font-bold ${isPreview ? 'text-black' : 'text-emerald-800'}`}>
+                        {labels.pg}
+                      </h3>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-sans">
+                        {filteredPg.length} Soal
+                      </span>
+                    </div>
                     <div className="space-y-4">
                         {filteredPg.map(s => {
                             const isSelected = currentSelectedQuestion?.displayNoSoal === s.noSoal;
+                            const optionsList = normalizeOptions(s.options);
                             return (
                             <div 
                                 key={s.noSoal} 
                                 onClick={() => !isPreview && setSelectedQuestionNo(s.noSoal)}
                                 className={`break-inside-avoid-page group relative transition-all ${
                                     !isPreview
-                                        ? `p-3.5 rounded-xl border cursor-pointer ${
+                                        ? `p-4 rounded-xl border cursor-pointer ${
                                             isSelected
-                                                ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/15 shadow-xs'
+                                                ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-sm'
                                                 : 'border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-50/60 bg-white'
                                         }`
-                                        : ''
+                                        : 'mb-4'
                                 }`}
                             >
-                                <div className="flex items-start justify-between gap-2 mb-2">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-emerald-800' : ''}`}>{s.noSoal}.</span>
+                                <div className="flex items-start justify-between gap-3 mb-2.5">
+                                  <div className="flex items-start gap-2.5 flex-1">
+                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-emerald-800' : 'text-neutral-900'}`}>{s.noSoal}.</span>
                                     <div className="flex-1">
-                                      <span className={isSelected && !isPreview ? 'text-neutral-900 font-medium' : ''}>{s.soal}</span>
+                                      <div className={`whitespace-pre-line ${isSelected && !isPreview ? 'text-neutral-950 font-medium' : 'text-neutral-900'}`}>
+                                        {cleanStemText(s.soal, true)}
+                                      </div>
                                     </div>
                                   </div>
                                   {!isPreview && (
@@ -414,16 +430,38 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                     </div>
                                   )}
                                 </div>
-                                <ul className={`list-none ${listDirClass} space-y-1 ${isPreview ? 'text-black' : 'text-gray-700'}`}>
-                                    {(s.options || []).map((opt: any) => (
-                                      <li key={opt.key} className="flex gap-2">
-                                        <span className="shrink-0 font-medium">{opt.key}.</span>
-                                        <span>{opt.value}</span>
-                                      </li>
-                                    ))}
-                                </ul>
+
+                                {/* Options List */}
+                                <div className={`space-y-1.5 ${listDirClass}`}>
+                                    {optionsList.map((opt) => {
+                                      const isCorrect = !isPreview && isCorrectOption(opt.key, s.kunciJawaban);
+                                      return (
+                                        <div 
+                                          key={opt.key} 
+                                          className={`flex items-start gap-2 p-1.5 rounded-lg transition-colors text-sm ${
+                                            isCorrect 
+                                              ? 'bg-emerald-50/90 border border-emerald-300 font-medium text-emerald-950' 
+                                              : (isPreview ? 'text-black' : 'text-neutral-800 hover:bg-neutral-50/80')
+                                          }`}
+                                        >
+                                          <span className="shrink-0 font-bold w-5">{opt.key}.</span>
+                                          <span className="flex-1 whitespace-pre-line">{opt.value}</span>
+                                          {isCorrect && (
+                                            <span className="shrink-0 text-[10px] font-sans font-bold text-emerald-800 bg-emerald-200/80 px-1.5 py-0.5 rounded">
+                                              Kunci
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+
                                 {!isPreview && (
-                                    <p className={`${listDirClass} mt-2 text-xs font-semibold text-emerald-800 font-sans leading-normal`}>{labels.kunci}: {s.kunciJawaban}</p>
+                                    <div className={`${listDirClass} mt-2.5 pt-2 border-t border-dashed border-neutral-200 flex items-center justify-between text-xs font-sans text-neutral-600`}>
+                                      <p className="font-semibold text-emerald-800">
+                                        {labels.kunci}: <span className="font-bold underline">{formatKunciJawaban(s.kunciJawaban)}</span>
+                                      </p>
+                                    </div>
                                 )}
                             </div>
                             );
@@ -431,38 +469,49 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                     </div>
                 </div>
             )}
+
             {filteredPgk.length > 0 && (
                  <div className="break-inside-avoid-page mt-8">
-                    <h3 className={`text-xl font-semibold ${isPreview ? 'text-black border-black' : 'text-green-700 border-green-200'} border-b-2 pb-2 mb-4`}>{labels.pgk}</h3>
+                    <div className="flex items-center justify-between border-b-2 border-teal-600 pb-2 mb-4">
+                      <h3 className={`text-xl font-bold ${isPreview ? 'text-black' : 'text-teal-800'}`}>
+                        {labels.pgk}
+                      </h3>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 font-sans">
+                        {filteredPgk.length} Soal
+                      </span>
+                    </div>
                     <div className="space-y-4">
                         {filteredPgk.map(s => {
                             const isSelected = currentSelectedQuestion?.displayNoSoal === s.noSoal;
+                            const optionsList = normalizeOptions(s.options);
                             return (
                             <div 
                                 key={s.noSoal} 
                                 onClick={() => !isPreview && setSelectedQuestionNo(s.noSoal)}
                                 className={`break-inside-avoid-page group relative transition-all ${
                                     !isPreview
-                                        ? `p-3.5 rounded-xl border cursor-pointer ${
+                                        ? `p-4 rounded-xl border cursor-pointer ${
                                             isSelected
-                                                ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/15 shadow-xs'
+                                                ? 'border-teal-500 bg-teal-50/40 ring-2 ring-teal-500/20 shadow-sm'
                                                 : 'border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-50/60 bg-white'
                                         }`
-                                        : ''
+                                        : 'mb-4'
                                 }`}
                             >
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-emerald-800' : ''}`}>{s.noSoal}.</span>
+                                <div className="flex items-start justify-between gap-3 mb-1.5">
+                                  <div className="flex items-start gap-2.5 flex-1">
+                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-teal-800' : 'text-neutral-900'}`}>{s.noSoal}.</span>
                                     <div className="flex-1">
-                                      <span className={isSelected && !isPreview ? 'text-neutral-900 font-medium' : ''}>{s.soal}</span>
+                                      <div className={`whitespace-pre-line ${isSelected && !isPreview ? 'text-neutral-950 font-medium' : 'text-neutral-900'}`}>
+                                        {cleanStemText(s.soal, true)}
+                                      </div>
                                     </div>
                                   </div>
                                   {!isPreview && (
                                     <div className="shrink-0 flex items-center gap-1.5">
                                       {isSelected ? (
-                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-                                          <Eye className="w-3 h-3 text-emerald-700" />
+                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">
+                                          <Eye className="w-3 h-3 text-teal-700" />
                                           Live Preview
                                         </span>
                                       ) : (
@@ -472,7 +521,7 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                             e.stopPropagation();
                                             setSelectedQuestionNo(s.noSoal);
                                           }}
-                                          className="p-1 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                          className="p-1 text-gray-400 hover:text-teal-700 hover:bg-teal-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                                           title="Tampilkan di Live Preview"
                                         >
                                           <Eye className="w-4 h-4" />
@@ -505,17 +554,50 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                     </div>
                                   )}
                                 </div>
-                                <p className={`text-sm italic ${isPreview ? 'text-gray-700' : 'text-gray-500'} mb-3 ${isArabic ? 'pr-6 md:pr-8' : 'pl-6 md:pl-8'} font-sans leading-normal`}>{s.petunjuk}</p>
-                                <ul className={`list-none ${listDirClass} space-y-1 ${isPreview ? 'text-black' : 'text-gray-700'}`}>
-                                    {(s.options || []).map((opt: any) => (
-                                      <li key={opt.key} className="flex gap-2">
-                                        <span className="shrink-0 font-medium">{opt.key}.</span>
-                                        <span>{opt.value}</span>
-                                      </li>
-                                    ))}
-                                </ul>
+
+                                {s.petunjuk && (
+                                  <div className={`mb-3 ${listDirClass}`}>
+                                    <span className="inline-flex items-center gap-1.5 text-xs italic text-teal-900 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-md font-sans">
+                                      <Info className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                                      {s.petunjuk}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Checkbox Options */}
+                                <div className={`space-y-1.5 ${listDirClass}`}>
+                                    {optionsList.map((opt) => {
+                                      const isCorrect = !isPreview && isCorrectOption(opt.key, s.kunciJawaban);
+                                      return (
+                                        <div 
+                                          key={opt.key} 
+                                          className={`flex items-start gap-2 p-1.5 rounded-lg transition-colors text-sm ${
+                                            isCorrect 
+                                              ? 'bg-teal-50/90 border border-teal-300 font-medium text-teal-950' 
+                                              : (isPreview ? 'text-black' : 'text-neutral-800 hover:bg-neutral-50/80')
+                                          }`}
+                                        >
+                                          <span className="font-mono text-neutral-500 font-bold shrink-0 w-6">
+                                            {isCorrect ? '[✓]' : '[  ]'}
+                                          </span>
+                                          <span className="shrink-0 font-bold w-5">{opt.key}.</span>
+                                          <span className="flex-1 whitespace-pre-line">{opt.value}</span>
+                                          {isCorrect && (
+                                            <span className="shrink-0 text-[10px] font-sans font-bold text-teal-800 bg-teal-200/80 px-1.5 py-0.5 rounded">
+                                              Kunci Benar
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+
                                 {!isPreview && (
-                                    <p className={`${listDirClass} mt-2 text-xs font-semibold text-emerald-800 font-sans leading-normal`}>{labels.kunci}: {(s.kunciJawaban || []).join(', ')}</p>
+                                    <div className={`${listDirClass} mt-2.5 pt-2 border-t border-dashed border-neutral-200 flex items-center justify-between text-xs font-sans text-neutral-600`}>
+                                      <p className="font-semibold text-teal-800">
+                                        {labels.kunci}: <span className="font-bold underline">{formatKunciJawaban(s.kunciJawaban)}</span>
+                                      </p>
+                                    </div>
                                 )}
                             </div>
                             );
@@ -523,9 +605,17 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                     </div>
                 </div>
             )}
+
             {filteredIsian.length > 0 && (
                  <div className="break-inside-avoid-page mt-8">
-                    <h3 className={`text-xl font-semibold ${isPreview ? 'text-black border-black' : 'text-green-700 border-green-200'} border-b-2 pb-2 mb-4`}>{labels.isian}</h3>
+                    <div className="flex items-center justify-between border-b-2 border-amber-600 pb-2 mb-4">
+                      <h3 className={`text-xl font-bold ${isPreview ? 'text-black' : 'text-amber-800'}`}>
+                        {labels.isian}
+                      </h3>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-sans">
+                        {filteredIsian.length} Soal
+                      </span>
+                    </div>
                     <div className="space-y-4">
                         {filteredIsian.map(s => {
                             const isSelected = currentSelectedQuestion?.displayNoSoal === s.noSoal;
@@ -535,25 +625,27 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                 onClick={() => !isPreview && setSelectedQuestionNo(s.noSoal)}
                                 className={`break-inside-avoid-page group relative transition-all ${
                                     !isPreview
-                                        ? `p-3.5 rounded-xl border cursor-pointer ${
+                                        ? `p-4 rounded-xl border cursor-pointer ${
                                             isSelected
-                                                ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/15 shadow-xs'
+                                                ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20 shadow-sm'
                                                 : 'border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-50/60 bg-white'
                                         }`
-                                        : ''
+                                        : 'mb-4'
                                 }`}
                             >
-                                <div className="flex items-start justify-between gap-2 mb-2">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-emerald-800' : ''}`}>{s.noSoal}.</span>
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="flex items-start gap-2.5 flex-1">
+                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-amber-800' : 'text-neutral-900'}`}>{s.noSoal}.</span>
                                     <div className="flex-1">
-                                      <span className={isSelected && !isPreview ? 'text-neutral-900 font-medium' : ''}>{s.soal}</span>
+                                      <div className={`whitespace-pre-line ${isSelected && !isPreview ? 'text-neutral-950 font-medium' : 'text-neutral-900'}`}>
+                                        {cleanStemText(s.soal, false)}
+                                      </div>
                                     </div>
                                   </div>
                                   {!isPreview && (
                                     <div className="shrink-0 flex items-center gap-1.5">
                                       {isSelected ? (
-                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
                                           <Eye className="w-3 h-3 text-emerald-700" />
                                           Live Preview
                                         </span>
@@ -564,7 +656,7 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                             e.stopPropagation();
                                             setSelectedQuestionNo(s.noSoal);
                                           }}
-                                          className="p-1 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                          className="p-1 text-gray-400 hover:text-amber-700 hover:bg-amber-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                                           title="Tampilkan di Live Preview"
                                         >
                                           <Eye className="w-4 h-4" />
@@ -597,13 +689,23 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                     </div>
                                   )}
                                 </div>
+
+                                {/* Answer field for Isian Singkat */}
+                                <div className={`${listDirClass} mt-3`}>
+                                  <div className="flex items-center gap-2 text-sm text-neutral-600 font-sans">
+                                    <span className="font-semibold text-neutral-800">Jawaban:</span>
+                                    <span className="border-b-2 border-dotted border-neutral-400 flex-1 h-5 tracking-widest text-transparent select-none">
+                                      ......................................................................
+                                    </span>
+                                  </div>
+                                </div>
+
                                 {!isPreview && (
-                                    <p className={`${listDirClass} mt-2 text-xs font-semibold text-emerald-800 font-sans leading-normal`}>{labels.kunci}: {s.kunciJawaban}</p>
-                                )}
-                                {isPreview && (
-                                    <div className={`${listDirClass} mt-4`}>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-6"></div>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-8"></div>
+                                    <div className={`${listDirClass} mt-3 pt-2 border-t border-dashed border-neutral-200 flex items-center justify-between text-xs font-sans`}>
+                                      <div className="p-2 bg-amber-50/80 border border-amber-200 rounded-md text-amber-900 w-full">
+                                        <span className="font-bold">{labels.kunci}:</span>{' '}
+                                        <span className="font-semibold text-neutral-900">{formatKunciJawaban(s.kunciJawaban)}</span>
+                                      </div>
                                     </div>
                                 )}
                             </div>
@@ -612,9 +714,17 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                     </div>
                 </div>
             )}
+
             {filteredUraian.length > 0 && (
                  <div className="break-inside-avoid-page mt-8">
-                    <h3 className={`text-xl font-semibold ${isPreview ? 'text-black border-black' : 'text-green-700 border-green-200'} border-b-2 pb-2 mb-4`}>{labels.uraian}</h3>
+                    <div className="flex items-center justify-between border-b-2 border-indigo-600 pb-2 mb-4">
+                      <h3 className={`text-xl font-bold ${isPreview ? 'text-black' : 'text-indigo-800'}`}>
+                        {labels.uraian}
+                      </h3>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-sans">
+                        {filteredUraian.length} Soal
+                      </span>
+                    </div>
                     <div className="space-y-4">
                         {filteredUraian.map(s => {
                             const isSelected = currentSelectedQuestion?.displayNoSoal === s.noSoal;
@@ -624,25 +734,27 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                 onClick={() => !isPreview && setSelectedQuestionNo(s.noSoal)}
                                 className={`break-inside-avoid-page group relative transition-all ${
                                     !isPreview
-                                        ? `p-3.5 rounded-xl border cursor-pointer ${
+                                        ? `p-4 rounded-xl border cursor-pointer ${
                                             isSelected
-                                                ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/15 shadow-xs'
+                                                ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-500/20 shadow-sm'
                                                 : 'border-neutral-200/90 hover:border-neutral-300 hover:bg-neutral-50/60 bg-white'
                                         }`
-                                        : ''
+                                        : 'mb-4'
                                 }`}
                             >
-                                <div className="flex items-start justify-between gap-2 mb-2">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-emerald-800' : ''}`}>{s.noSoal}.</span>
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="flex items-start gap-2.5 flex-1">
+                                    <span className={`shrink-0 font-bold ${isSelected && !isPreview ? 'text-indigo-800' : 'text-neutral-900'}`}>{s.noSoal}.</span>
                                     <div className="flex-1">
-                                      <span className={isSelected && !isPreview ? 'text-neutral-900 font-medium' : ''}>{s.soal}</span>
+                                      <div className={`whitespace-pre-line ${isSelected && !isPreview ? 'text-neutral-950 font-medium' : 'text-neutral-900'}`}>
+                                        {cleanStemText(s.soal, false)}
+                                      </div>
                                     </div>
                                   </div>
                                   {!isPreview && (
                                     <div className="shrink-0 flex items-center gap-1.5">
                                       {isSelected ? (
-                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-sans font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded">
                                           <Eye className="w-3 h-3 text-emerald-700" />
                                           Live Preview
                                         </span>
@@ -653,7 +765,7 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                             e.stopPropagation();
                                             setSelectedQuestionNo(s.noSoal);
                                           }}
-                                          className="p-1 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                          className="p-1 text-gray-400 hover:text-indigo-700 hover:bg-indigo-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                                           title="Tampilkan di Live Preview"
                                         >
                                           <Eye className="w-4 h-4" />
@@ -686,25 +798,45 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                                     </div>
                                   )}
                                 </div>
-                                {!isPreview && (
-                                    <div className={`${isArabic ? 'pr-6 md:pr-8 border-r-2' : 'pl-6 md:pl-8 border-l-2'} mt-3 border-emerald-200 font-sans leading-normal`}>
-                                        <h4 className="font-semibold text-gray-700">{labels.rubrik}:</h4>
-                                        <ul className="text-sm text-gray-600 list-disc list-inside mt-2 space-y-1">
-                                            <li><span className="font-medium">{isArabic ? "اَلدَّرَجَةُ ٤" : (isJavanese ? "ꦱ꧀ꦏꦺꦴꦂ꧇꧔꧇" : "Skor 4")}:</span> {s.rubrik?.skor4}</li>
-                                            <li><span className="font-medium">{isArabic ? "اَلدَّرَجَةُ ٣" : (isJavanese ? "ꦱ꧀ꦏꦺꦴꦂ꧇꧓꧇" : "Skor 3")}:</span> {s.rubrik?.skor3}</li>
-                                            <li><span className="font-medium">{isArabic ? "اَلدَّرَجَةُ ٢" : (isJavanese ? "ꦱ꧀ꦏꦺꦴꦂ꧇꧒꧇" : "Skor 2")}:</span> {s.rubrik?.skor2}</li>
-                                            <li><span className="font-medium">{isArabic ? "اَلدَّرَجَةُ ١" : (isJavanese ? "ꦱ꧀ꦏꦺꦴꦂ꧇꧑꧇" : "Skor 1")}:</span> {s.rubrik?.skor1}</li>
-                                        </ul>
+
+                                {/* Answer Ruled Space for Uraian */}
+                                <div className={`${listDirClass} mt-3`}>
+                                  {isPreview ? (
+                                    <div className="space-y-4 my-3 font-sans">
+                                      <div className="border-b border-dotted border-gray-400 w-full h-4"></div>
+                                      <div className="border-b border-dotted border-gray-400 w-full h-4"></div>
+                                      <div className="border-b border-dotted border-gray-400 w-full h-4"></div>
+                                      <div className="border-b border-dotted border-gray-400 w-full h-4"></div>
                                     </div>
-                                )}
-                                {isPreview && (
-                                    <div className={`${listDirClass} mt-4 space-y-8`}>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-6"></div>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-6"></div>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-6"></div>
-                                      <div className="border-b border-dotted border-gray-400 w-full h-6"></div>
-                                    </div>
-                                )}
+                                  ) : (
+                                    s.rubrik && (
+                                      <div className="mt-3 p-3.5 bg-neutral-50/90 border border-neutral-200 rounded-xl text-xs font-sans text-neutral-800 shadow-xs">
+                                        <p className="font-bold text-indigo-900 mb-2.5 border-b border-neutral-200 pb-1.5 flex items-center justify-between">
+                                          <span>{labels.rubrik}</span>
+                                          <span className="text-[10px] text-neutral-500 font-normal">Pedoman Penskoran Guru</span>
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div className="p-2.5 bg-white rounded-lg border border-neutral-200">
+                                            <span className="font-bold text-emerald-700">Skor 4 (Sangat Baik):</span>
+                                            <p className="mt-0.5 text-neutral-700">{s.rubrik?.skor4 || '-'}</p>
+                                          </div>
+                                          <div className="p-2.5 bg-white rounded-lg border border-neutral-200">
+                                            <span className="font-bold text-blue-700">Skor 3 (Baik):</span>
+                                            <p className="mt-0.5 text-neutral-700">{s.rubrik?.skor3 || '-'}</p>
+                                          </div>
+                                          <div className="p-2.5 bg-white rounded-lg border border-neutral-200">
+                                            <span className="font-bold text-amber-700">Skor 2 (Cukup):</span>
+                                            <p className="mt-0.5 text-neutral-700">{s.rubrik?.skor2 || '-'}</p>
+                                          </div>
+                                          <div className="p-2.5 bg-white rounded-lg border border-neutral-200">
+                                            <span className="font-bold text-rose-700">Skor 1 (Kurang):</span>
+                                            <p className="mt-0.5 text-neutral-700">{s.rubrik?.skor1 || '-'}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
                             </div>
                             );
                         })}
@@ -713,13 +845,14 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
             )}
             
             {(!filteredPg.length && !filteredPgk.length && !filteredIsian.length && !filteredUraian.length) && (
-              <div className="text-center py-8 text-gray-500 font-sans" dir="ltr">
-                <p>Tidak ada soal dengan tingkat kesulitan {activeTab}.</p>
+              <div className="text-center py-12 text-gray-500 font-sans bg-gray-50 rounded-xl border border-dashed border-gray-200" dir="ltr">
+                <p className="font-medium">Tidak ada butir soal pada kategori {activeTab}.</p>
+                <p className="text-xs text-gray-400 mt-1">Pilih tab "Semua Soal" untuk melihat seluruh butir soal.</p>
               </div>
             )}
         </div>
     );
-  }
+  };
 
   return (
     <Card>
@@ -956,29 +1089,29 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
 
               <div>
                 <h4 className="font-semibold text-gray-800 mb-2 border-b pb-1">Pertanyaan (Stem)</h4>
-                <p className="text-gray-700 leading-relaxed font-medium">{modalData.soal.soal}</p>
+                <div className="text-gray-700 leading-relaxed font-medium whitespace-pre-line">
+                  {cleanStemText(modalData.soal.soal, Boolean(modalData.soal.options))}
+                </div>
               </div>
 
               {modalData.soal.petunjuk && (
                 <div>
                   <h4 className="font-semibold text-gray-800 mb-2 border-b pb-1">Petunjuk</h4>
-                  <p className="text-gray-600 italic">{modalData.soal.petunjuk}</p>
+                  <p className="text-gray-600 italic whitespace-pre-line">{modalData.soal.petunjuk}</p>
                 </div>
               )}
 
-              {modalData.soal.options && (
+              {modalData.soal.options && normalizeOptions(modalData.soal.options).length > 0 && (
                 <div>
                   <h4 className="font-semibold text-gray-800 mb-2 border-b pb-1">Pilihan Jawaban (Distractor)</h4>
-                  <ul className="space-y-2 text-gray-700">
-                    {modalData.soal.options.map((opt: any) => {
-                      const isCorrect = Array.isArray(modalData.soal.kunciJawaban) 
-                        ? modalData.soal.kunciJawaban.includes(opt.key)
-                        : modalData.soal.kunciJawaban === opt.key;
+                  <ul className="space-y-2 text-gray-700 font-sans">
+                    {normalizeOptions(modalData.soal.options).map((opt) => {
+                      const isCorrect = isCorrectOption(opt.key, modalData.soal.kunciJawaban);
                       return (
-                        <li key={opt.key} className={`flex gap-3 p-2 rounded border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
-                          <span className="font-bold">{opt.key}.</span>
-                          <span>{opt.value}</span>
-                          {isCorrect && <span className="ml-auto text-xs font-bold text-green-700 bg-green-200 px-2 py-0.5 rounded-full">KUNCI</span>}
+                        <li key={opt.key} className={`flex items-start gap-3 p-2.5 rounded-lg border ${isCorrect ? 'bg-emerald-50 border-emerald-300' : 'bg-gray-50 border-gray-200'}`}>
+                          <span className={`font-bold w-6 shrink-0 ${isCorrect ? 'text-emerald-800' : 'text-gray-700'}`}>{opt.key}.</span>
+                          <span className="flex-1 whitespace-pre-line">{opt.value}</span>
+                          {isCorrect && <span className="ml-auto shrink-0 text-xs font-bold text-emerald-800 bg-emerald-200 px-2 py-0.5 rounded-full">KUNCI</span>}
                         </li>
                       );
                     })}
@@ -986,10 +1119,12 @@ const Step4Soal: React.FC<Props> = ({ appState, setAppState, handleNext, handleB
                 </div>
               )}
 
-              {!modalData.soal.options && modalData.soal.kunciJawaban && (
+              {modalData.soal.kunciJawaban && (
                 <div>
                   <h4 className="font-semibold text-gray-800 mb-2 border-b pb-1">Kunci Jawaban</h4>
-                  <p className="text-gray-700 font-medium bg-green-50 p-3 rounded-lg border border-green-100">{modalData.soal.kunciJawaban}</p>
+                  <p className="text-gray-800 font-semibold bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+                    {formatKunciJawaban(modalData.soal.kunciJawaban)}
+                  </p>
                 </div>
               )}
 
